@@ -5,3 +5,13 @@ workers_dev = true
 
 [observability]
 enabled = true
+
+
+# Approximate per-IP protection: at most 5 requests per minute per Cloudflare location.
+[[ratelimits]]
+name = "ANON_AI_LIMITER"
+namespace_id = "84271001"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
