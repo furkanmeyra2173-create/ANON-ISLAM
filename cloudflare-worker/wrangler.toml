@@ -15,3 +15,6 @@ namespace_id = "84271001"
   [ratelimits.simple]
   limit = 5
   period = 60
+
+[ai]
+binding = "AI"
