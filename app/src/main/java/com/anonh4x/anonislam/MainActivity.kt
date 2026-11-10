@@ -374,33 +374,46 @@ private fun AiChatScreen() {
     val messages = remember {
         mutableStateListOf(
             ChatMessage(
-                "Esselâmü aleyküm! Ben ANON İSLAM asistanının sohbet ekranıyım. Güvenilir kaynaklara dayalı cevap sistemi henüz sunucuya bağlanmadı.",
+                "Esselâmü aleyküm! Ben ANON İSLAM yapay zekâ asistanıyım. İslami konulardaki sorularını sorabilirsin. Cevaplarımı dikkatli ve kaynak odaklı vermeye çalışırım.",
                 false
             )
         )
     }
     var draft by rememberSaveable { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 18.dp)) {
         ScreenHeading("ANON AI", "İslami konularda kaynak odaklı yardımcı")
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Panel),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-        ) {
-            Text(
-                "Önemli: Bu sürümde AI servisi henüz bağlı değil. Dinî hüküm veya fetva yerine geçecek cevap üretilmez.",
-                color = Gold,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(12.dp)
-            )
-        }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             items(messages) { message -> MessageBubble(message) }
+            if (isSending) {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Panel),
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp),
+                                    color = Emerald,
+                                    strokeWidth = 2.dp
+                                )
+                                Text("ANON AI düşünüyor…", color = Muted, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -413,23 +426,35 @@ private fun AiChatScreen() {
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Sorunu yaz…") },
                 maxLines = 3,
+                enabled = !isSending,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send)
             )
             IconButton(
                 onClick = {
                     val question = draft.trim()
-                    if (question.isNotEmpty()) {
+                    if (question.isNotEmpty() && !isSending) {
                         messages.add(ChatMessage(question, true))
-                        messages.add(
-                            ChatMessage(
-                                "Sorunu aldım. Gerçek AI yanıtı verebilmem için güvenli sunucu bağlantısının kurulması gerekiyor. Şimdilik bu ekranda canlı AI cevabı üretmiyorum.",
-                                false
-                            )
-                        )
                         draft = ""
+                        isSending = true
+                        val requestMessages = messages.takeLast(12).toList()
+                        scope.launch {
+                            try {
+                                val answer = sendAiMessage(requestMessages)
+                                messages.add(ChatMessage(answer, false))
+                            } catch (e: Exception) {
+                                messages.add(
+                                    ChatMessage(
+                                        e.message ?: "AI servisine bağlanılamadı. İnternet bağlantını kontrol edip tekrar dene.",
+                                        false
+                                    )
+                                )
+                            } finally {
+                                isSending = false
+                            }
+                        }
                     }
                 },
-                enabled = draft.isNotBlank()
+                enabled = draft.isNotBlank() && !isSending
             ) {
                 Icon(Icons.Filled.Send, contentDescription = "Gönder", tint = Emerald)
             }
@@ -564,3 +589,57 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
 }
 
 private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
+
+
+private suspend fun sendAiMessage(messages: List<ChatMessage>): String = withContext(Dispatchers.IO) {
+    val endpoint = "https://anon-islam.furkanmeyra-2173.workers.dev"
+    val payload = JSONObject().apply {
+        put("messages", org.json.JSONArray().apply {
+            messages.takeLast(12).forEach { message ->
+                put(JSONObject().apply {
+                    put("role", if (message.fromUser) "user" else "assistant")
+                    put("content", message.text)
+                })
+            }
+        })
+    }
+
+    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        connectTimeout = 20000
+        readTimeout = 90000
+        doOutput = true
+        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        setRequestProperty("Accept", "application/json")
+    }
+
+    try {
+        connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write(payload.toString())
+        }
+
+        val status = connection.responseCode
+        val responseBody = if (status in 200..299) {
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        }
+        val response = try {
+            JSONObject(responseBody)
+        } catch (_: Exception) {
+            JSONObject()
+        }
+
+        if (status !in 200..299) {
+            val serverMessage = response.optString("error")
+            throw IllegalStateException(
+                serverMessage.ifBlank { "AI sunucusu hata verdi (HTTP $status)." }
+            )
+        }
+
+        response.optString("answer").takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("AI boş yanıt döndürdü. Lütfen tekrar dene.")
+    } finally {
+        connection.disconnect()
+    }
+}
