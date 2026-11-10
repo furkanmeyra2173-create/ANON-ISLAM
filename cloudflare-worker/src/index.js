@@ -40,6 +40,17 @@ export default {
       });
     }
 
+    // Approximate per-IP abuse protection. Cloudflare applies counters per location.
+    const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
+    if (env.ANON_AI_LIMITER) {
+      const { success } = await env.ANON_AI_LIMITER.limit({ key: clientIp });
+      if (!success) {
+        return json({ error: "Çok fazla istek gönderdin. Bir dakika bekleyip tekrar dene." }, 429, {
+          "Retry-After": "60"
+        });
+      }
+    }
+
     if (!env.OPENAI_API_KEY) {
       return json({ error: "AI servisi henüz yapılandırılmadı." }, 503);
     }
@@ -82,7 +93,7 @@ export default {
           model: "gpt-6-luna",
           instructions: SYSTEM_INSTRUCTIONS,
           input,
-          max_output_tokens: 700,
+          max_output_tokens: 500,
           store: false
         })
       });
