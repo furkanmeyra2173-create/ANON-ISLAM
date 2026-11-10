@@ -51,8 +51,8 @@ export default {
       }
     }
 
-    if (!env.OPENAI_API_KEY) {
-      return json({ error: "AI servisi henüz yapılandırılmadı." }, 503);
+    if (!env.AI) {
+      return json({ error: "Ücretsiz AI servisi henüz etkinleştirilmedi." }, 503);
     }
 
     let body;
@@ -83,38 +83,25 @@ export default {
     }
 
     try {
-      const upstream = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
+      const result = await env.AI.run(
+        "@cf/google/gemma-4-26b-a4b-it",
+        {
+          messages: [
+            { role: "system", content: SYSTEM_INSTRUCTIONS },
+            ...input
+          ],
+          max_tokens: 500,
+          chat_template_kwargs: { enable_thinking: false }
         },
-        body: JSON.stringify({
-          model: "gpt-6-luna",
-          instructions: SYSTEM_INSTRUCTIONS,
-          input,
-          max_output_tokens: 500,
-          store: false
-        })
-      });
+        { rejectIfBusy: true }
+      );
 
-      const data = await upstream.json();
-
-      if (!upstream.ok) {
-        console.error("OpenAI API error:", upstream.status, data?.error?.type || "unknown");
-        return json({
-          error: upstream.status === 429
-            ? "AI kullanım limiti veya bakiye sınırı nedeniyle şu anda yanıt veremiyor."
-            : "AI servisine bağlanırken bir hata oluştu."
-        }, upstream.status === 429 ? 429 : 502);
-      }
-
-      const answer = (data.output || [])
-        .flatMap(item => item.content || [])
-        .filter(part => part.type === "output_text")
-        .map(part => part.text || "")
-        .join("\n")
-        .trim();
+      // Workers AI model output may expose either a direct response or chat-completion shape.
+      const answer = (
+        result?.response ||
+        result?.choices?.[0]?.message?.content ||
+        ""
+      ).trim();
 
       if (!answer) {
         return json({ error: "AI boş yanıt döndürdü. Lütfen tekrar dene." }, 502);
