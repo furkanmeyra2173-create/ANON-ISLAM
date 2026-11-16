@@ -7,9 +7,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.activity.ComponentActivity
@@ -27,7 +31,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
@@ -67,7 +70,9 @@ private data class PrayerData(
     val city: String,
     val date: String,
     val hijriDate: String,
-    val times: List<PrayerTime>
+    val times: List<PrayerTime>,
+    val dateIso: String = "",
+    val isCached: Boolean = false
 )
 
 class MainActivity : ComponentActivity() {
@@ -94,7 +99,15 @@ class MainActivity : ComponentActivity() {
 private fun AnonIslamApp() {
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME.name) }
     var city by rememberSaveable { mutableStateOf("Uhingen") }
-    var prayerData by remember { mutableStateOf<PrayerData?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prayerPreferences = remember(context) {
+        context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE)
+    }
+    var prayerData by remember {
+        mutableStateOf(
+            loadCachedPrayerData(prayerPreferences.getString(prayerCacheKey(city), null))
+        )
+    }
     var isLoadingPrayer by remember { mutableStateOf(false) }
     var prayerError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -107,10 +120,21 @@ private fun AnonIslamApp() {
             scope.launch {
                 isLoadingPrayer = true
                 prayerError = null
+                prayerData = loadCachedPrayerData(
+                    prayerPreferences.getString(prayerCacheKey(requestedCity), null)
+                )
                 try {
-                    prayerData = fetchPrayerTimes(requestedCity)
+                    val latestPrayerData = fetchPrayerTimes(requestedCity)
+                    prayerPreferences.edit()
+                        .putString(prayerCacheKey(requestedCity), prayerDataToCache(latestPrayerData))
+                        .apply()
+                    prayerData = latestPrayerData
                 } catch (e: Exception) {
-                    prayerError = e.message ?: "Namaz vakitleri alınamadı. İnternet bağlantını kontrol et."
+                    prayerError = if (prayerData != null) {
+                        "İnternet yok veya vakitler güncellenemedi. ${prayerData?.date} tarihli kayıtlı veri gösteriliyor."
+                    } else {
+                        e.message ?: "Namaz vakitleri alınamadı. İnternet bağlantını kontrol et."
+                    }
                 } finally {
                     isLoadingPrayer = false
                 }
@@ -207,7 +231,12 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
                 if (prayerData == null) {
                     Text("Vakitler yükleniyor veya şehir seçimi bekleniyor…", color = Muted, fontSize = 12.sp)
                 } else {
-                    Text(prayerData.city + " • " + prayerData.date, color = Muted, fontSize = 12.sp)
+                    Text(
+                        prayerData.city + " • " + prayerData.date + if (prayerData.isCached) " • kayıtlı" else "",
+                        color = Muted,
+                        fontSize = 12.sp
+                    )
+                    NextPrayerCountdown(prayerData)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         prayerData.times.filter { it.name != "Güneş" }.forEach { prayer ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -231,17 +260,6 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FeatureCard("Tesbih", "Çevrimdışı zikir sayacı", Icons.Filled.Favorite, Modifier.weight(1f)) {
-                onNavigate(AppTab.MORE)
-            }
-            FeatureCard("Tesbih ve Dualar", "Hazırlanıyor", Icons.Filled.Favorite, Modifier.weight(1f)) {
-                onNavigate(AppTab.MORE)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Kıble Pusulası", "Hazırlanıyor", Icons.Filled.Explore, Modifier.weight(1f)) {
-                onNavigate(AppTab.MORE)
-            }
-            FeatureCard("Diğer Özellikler", "Yol haritası", Icons.Filled.MoreHoriz, Modifier.weight(1f)) {
                 onNavigate(AppTab.MORE)
             }
         }
@@ -327,9 +345,14 @@ private fun PrayerScreen(
                         Spacer(Modifier.width(7.dp))
                         Column {
                             Text(prayerData.city, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text(prayerData.date, color = Muted, fontSize = 12.sp)
+                            Text(
+                                prayerData.date + if (prayerData.isCached) " • çevrimdışı kayıt" else "",
+                                color = Muted,
+                                fontSize = 12.sp
+                            )
                         }
                     }
+                    NextPrayerCountdown(prayerData)
                     if (prayerData.hijriDate.isNotBlank()) {
                         Text("Hicrî tarih: " + prayerData.hijriDate, color = Gold, fontSize = 12.sp)
                     }
@@ -441,7 +464,7 @@ private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Çevrimdışı kullanım", color = Gold, fontWeight = FontWeight.Bold)
-                Text("Zikir sayacı internet olmadan çalışır ve sayım bu cihazda saklanır. Namaz vakitleri internetten alınır; çevrimdışı hesaplama ve konum pusulası henüz sunulmamaktadır.", color = Muted, fontSize = 12.sp)
+                Text("Zikir sayacı internet olmadan çalışır ve sayım bu cihazda saklanır. Namaz vakitleri internetten güncellenir; son başarılı günün kayıtlı çizelgesi çevrimdışı görüntülenebilir. Güncel hesaplama ve kıble pusulası henüz sunulmamaktadır.", color = Muted, fontSize = 12.sp)
             }
         }
         OutlinedButton(onClick = onNavigateToPrayer, modifier = Modifier.fillMaxWidth()) {
@@ -491,6 +514,10 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
         val hijri = date?.optJSONObject("hijri")?.optString("date").orEmpty()
         val readableDate = date?.optString("readable").orEmpty()
             .ifBlank { SimpleDateFormat("dd MMM yyyy", Locale("tr", "TR")).format(Date()) }
+        val dateIso = date?.optJSONObject("gregorian")?.optString("iso8601")
+            ?.substringBefore("T")
+            .orEmpty()
+            .ifBlank { LocalDate.now(ZoneId.of("Europe/Berlin")).toString() }
 
         val prayers = listOf(
             PrayerTime("İmsak", cleanTime(timings.optString("Fajr"))),
@@ -500,10 +527,91 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
             PrayerTime("Akşam", cleanTime(timings.optString("Maghrib"))),
             PrayerTime("Yatsı", cleanTime(timings.optString("Isha")))
         )
-        PrayerData(city, readableDate, hijri, prayers)
+        PrayerData(city, readableDate, hijri, prayers, dateIso = dateIso)
     } finally {
         connection.disconnect()
     }
 }
 
 private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
+
+private fun prayerCacheKey(city: String): String =
+    "prayer_cache_${city.trim().lowercase(Locale.ROOT)}"
+
+private fun prayerDataToCache(prayerData: PrayerData): String = JSONObject().apply {
+    put("city", prayerData.city)
+    put("date", prayerData.date)
+    put("hijriDate", prayerData.hijriDate)
+    put("dateIso", prayerData.dateIso)
+    put("times", org.json.JSONArray().apply {
+        prayerData.times.forEach { prayer ->
+            put(JSONObject().apply {
+                put("name", prayer.name)
+                put("time", prayer.time)
+            })
+        }
+    })
+}.toString()
+
+private fun loadCachedPrayerData(serialized: String?): PrayerData? = runCatching {
+    if (serialized.isNullOrBlank()) return null
+    val cached = JSONObject(serialized)
+    val times = cached.getJSONArray("times")
+    val prayerTimes = (0 until times.length()).map { index ->
+        val prayer = times.getJSONObject(index)
+        PrayerTime(prayer.getString("name"), prayer.getString("time"))
+    }
+    if (prayerTimes.size < 5 || prayerTimes.any { runCatching { LocalTime.parse(it.time) }.isFailure }) {
+        return null
+    }
+    PrayerData(
+        city = cached.getString("city"),
+        date = cached.getString("date"),
+        hijriDate = cached.optString("hijriDate"),
+        times = prayerTimes,
+        dateIso = cached.optString("dateIso"),
+        isCached = true
+    )
+}.getOrNull()
+
+@Composable
+private fun NextPrayerCountdown(prayerData: PrayerData) {
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(prayerData.city, prayerData.dateIso) {
+        while (true) {
+            currentTime = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+
+    val nextPrayer = remember(prayerData, currentTime) {
+        val zone = ZoneId.of("Europe/Berlin")
+        val today = LocalDate.now(zone)
+        val scheduleDate = runCatching { LocalDate.parse(prayerData.dateIso) }.getOrNull()
+        if (scheduleDate != today) {
+            null
+        } else {
+            val now = java.time.Instant.ofEpochMilli(currentTime).atZone(zone)
+            prayerData.times
+                .filter { it.name != "Güneş" }
+                .mapNotNull { prayer ->
+                    val time = runCatching { LocalTime.parse(prayer.time) }.getOrNull() ?: return@mapNotNull null
+                    val target = today.atTime(time).atZone(zone)
+                    if (target.isAfter(now)) prayer.name to java.time.Duration.between(now, target).seconds else null
+                }
+                .firstOrNull()
+        }
+    }
+
+    if (nextPrayer == null) {
+        Text("Sonraki namaz sayacı için bugünün güncel vakitleri gerekli.", color = Muted, fontSize = 12.sp)
+    } else {
+        val remaining = nextPrayer.second.coerceAtLeast(0)
+        Text(
+            "${nextPrayer.first} vaktine ${String.format(Locale.getDefault(), "%02d:%02d:%02d", remaining / 3600, (remaining % 3600) / 60, remaining % 60)}",
+            color = Gold,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp
+        )
+    }
+}
