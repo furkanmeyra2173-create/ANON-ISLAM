@@ -1,5 +1,6 @@
 package com.anonh4x.anonislam
 
+import android.content.Context
 import android.os.Bundle
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -20,24 +21,21 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,7 +58,6 @@ private val Muted = Color(0xFFB8C8C0)
 private enum class AppTab(val label: String, val icon: ImageVector) {
     HOME("Ana Sayfa", Icons.Filled.Home),
     PRAYER("Namaz", Icons.Filled.Mosque),
-    AI("AI Asistan", Icons.Filled.Chat),
     QURAN("Kur'an", Icons.Filled.AutoStories),
     MORE("Diğer", Icons.Filled.MoreHoriz)
 }
@@ -72,7 +69,6 @@ private data class PrayerData(
     val hijriDate: String,
     val times: List<PrayerTime>
 )
-private data class ChatMessage(val text: String, val fromUser: Boolean)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -162,7 +158,6 @@ private fun AnonIslamApp() {
                 AppTab.PRAYER -> PrayerScreen(
                     city, { city = it }, prayerData, isLoadingPrayer, prayerError, loadPrayerTimes
                 )
-                AppTab.AI -> AiChatScreen()
                 AppTab.QURAN -> QuranScreen()
                 AppTab.MORE -> MoreScreen { selectedTab = AppTab.PRAYER.name }
             }
@@ -194,13 +189,6 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
                 Text("ESSELÂMÜ ALEYKÜM", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text("Hoş geldin", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 Text("İbadet ve öğrenme yolculuğuna buradan devam et.", color = Muted, fontSize = 13.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.SmartToy, contentDescription = null, tint = Emerald, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    TextButton(onClick = { onNavigate(AppTab.AI) }) {
-                        Text("AI asistanına sor", color = Gold)
-                    }
-                }
             }
         }
 
@@ -242,8 +230,8 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Yapay Zekâ", "İslami soru-cevap", Icons.Filled.SmartToy, Modifier.weight(1f)) {
-                onNavigate(AppTab.AI)
+            FeatureCard("Tesbih", "Çevrimdışı zikir sayacı", Icons.Filled.Favorite, Modifier.weight(1f)) {
+                onNavigate(AppTab.MORE)
             }
             FeatureCard("Tesbih ve Dualar", "Hazırlanıyor", Icons.Filled.Favorite, Modifier.weight(1f)) {
                 onNavigate(AppTab.MORE)
@@ -370,115 +358,6 @@ private fun PrayerScreen(
 }
 
 @Composable
-private fun AiChatScreen() {
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                "Esselâmü aleyküm! Ben ANON İSLAM yapay zekâ asistanıyım. İslami konulardaki sorularını sorabilirsin. Cevaplarımı dikkatli ve kaynak odaklı vermeye çalışırım.",
-                false
-            )
-        )
-    }
-    var draft by rememberSaveable { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 18.dp)) {
-        ScreenHeading("ANON AI", "İslami konularda kaynak odaklı yardımcı")
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(messages) { message -> MessageBubble(message) }
-            if (isSending) {
-                item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Panel),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(9.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    Modifier.size(16.dp),
-                                    color = Emerald,
-                                    strokeWidth = 2.dp
-                                )
-                                Text("ANON AI düşünüyor…", color = Muted, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Sorunu yaz…") },
-                maxLines = 3,
-                enabled = !isSending,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send)
-            )
-            IconButton(
-                onClick = {
-                    val question = draft.trim()
-                    if (question.isNotEmpty() && !isSending) {
-                        messages.add(ChatMessage(question, true))
-                        draft = ""
-                        isSending = true
-                        val requestMessages = messages.takeLast(12).toList()
-                        scope.launch {
-                            try {
-                                val answer = sendAiMessage(requestMessages)
-                                messages.add(ChatMessage(answer, false))
-                            } catch (e: Exception) {
-                                messages.add(
-                                    ChatMessage(
-                                        e.message ?: "AI servisine bağlanılamadı. İnternet bağlantını kontrol edip tekrar dene.",
-                                        false
-                                    )
-                                )
-                            } finally {
-                                isSending = false
-                            }
-                        }
-                    }
-                },
-                enabled = draft.isNotBlank() && !isSending
-            ) {
-                Icon(Icons.Filled.Send, contentDescription = "Gönder", tint = Emerald)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MessageBubble(message: ChatMessage) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
-    ) {
-        Card(
-            modifier = Modifier.widthIn(max = 310.dp),
-            colors = CardDefaults.cardColors(containerColor = if (message.fromUser) PanelLight else Panel),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Text(message.text, modifier = Modifier.padding(13.dp), color = Color.White, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
 private fun QuranScreen() {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -501,29 +380,68 @@ private fun QuranScreen() {
 
 @Composable
 private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    var count by rememberSaveable { mutableIntStateOf(preferences.getInt("dhikr_count", 0)) }
+    var target by rememberSaveable { mutableIntStateOf(preferences.getInt("dhikr_target", 33)) }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenHeading("Diğer Özellikler", "ANON İSLAM geliştirme planı")
-        val planned = listOf(
-            "Dijital tesbih ve zikir geçmişi",
-            "Günlük dualar ve kaynaklı hadisler",
-            "Kıble pusulası",
-            "Hicrî takvim ve özel günler",
-            "Namaz vakti bildirimleri"
-        )
-        planned.forEach { item ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Panel),
-                shape = RoundedCornerShape(14.dp)
+        ScreenHeading("Tesbih ve araçlar", "Sayaç cihazında saklanır, internet gerekmez")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(22.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = Emerald)
-                    Spacer(Modifier.width(12.dp))
-                    Text(item, color = Color.White, fontSize = 13.sp)
+                Text("ZİKİR SAYACI", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("$count", color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+                Text("Hedef: $target", color = Muted, fontSize = 13.sp)
+                LinearProgressIndicator(
+                    progress = { (count.toFloat() / target).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Emerald,
+                    trackColor = PanelLight
+                )
+                Button(
+                    onClick = {
+                        count += 1
+                        preferences.edit().putInt("dhikr_count", count).apply()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald, contentColor = Night)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Bir zikir say", fontWeight = FontWeight.Bold)
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = {
+                        count = 0
+                        preferences.edit().putInt("dhikr_count", 0).apply()
+                    }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Text(" Sıfırla")
+                    }
+                    TextButton(onClick = {
+                        target = if (target == 33) 99 else 33
+                        preferences.edit().putInt("dhikr_target", target).apply()
+                    }) {
+                        Text("Hedefi ${if (target == 33) "99" else "33"} yap")
+                    }
+                }
+            }
+        }
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("Çevrimdışı kullanım", color = Gold, fontWeight = FontWeight.Bold)
+                Text("Zikir sayacı internet olmadan çalışır ve sayım bu cihazda saklanır. Namaz vakitleri internetten alınır; çevrimdışı hesaplama ve konum pusulası henüz sunulmamaktadır.", color = Muted, fontSize = 12.sp)
             }
         }
         OutlinedButton(onClick = onNavigateToPrayer, modifier = Modifier.fillMaxWidth()) {
@@ -589,57 +507,3 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
 }
 
 private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
-
-
-private suspend fun sendAiMessage(messages: List<ChatMessage>): String = withContext(Dispatchers.IO) {
-    val endpoint = "https://anon-islam.furkanmeyra-2173.workers.dev"
-    val payload = JSONObject().apply {
-        put("messages", org.json.JSONArray().apply {
-            messages.takeLast(12).forEach { message ->
-                put(JSONObject().apply {
-                    put("role", if (message.fromUser) "user" else "assistant")
-                    put("content", message.text)
-                })
-            }
-        })
-    }
-
-    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        connectTimeout = 20000
-        readTimeout = 90000
-        doOutput = true
-        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        setRequestProperty("Accept", "application/json")
-    }
-
-    try {
-        connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-            writer.write(payload.toString())
-        }
-
-        val status = connection.responseCode
-        val responseBody = if (status in 200..299) {
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } else {
-            connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-        }
-        val response = try {
-            JSONObject(responseBody)
-        } catch (_: Exception) {
-            JSONObject()
-        }
-
-        if (status !in 200..299) {
-            val serverMessage = response.optString("error")
-            throw IllegalStateException(
-                serverMessage.ifBlank { "AI sunucusu hata verdi (HTTP $status)." }
-            )
-        }
-
-        response.optString("answer").takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("AI boş yanıt döndürdü. Lütfen tekrar dene.")
-    } finally {
-        connection.disconnect()
-    }
-}
