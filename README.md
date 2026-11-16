@@ -6,6 +6,7 @@ Türkçe arayüzlü, Android için kapsamlı bir İslam yardımcı uygulaması.
 - Türkçe Jetpack Compose ana ekranı ve alt gezinme
 - Şehir seçimiyle çevrimiçi namaz vakitleri; son başarılı günün vakitleri cihazda çevrimdışı görüntülenebilir ve kayıtlı olduğu belirtilir
 - Sonraki namaza geri sayım yalnızca güncel tarihli vakit verisi varsa gösterilir
+- Şehir, desteklenen hesaplama yöntemi ve ikindi tercihi seçilebilir; günlük namaz takibi cihazda tarih bazında saklanır
 - Cihazda saklanan, internet gerektirmeyen dijital zikir sayacı
 - Yapay zekâ sohbeti, API bağlantısı veya chatbot uygulamaya dahil değildir
 - 114 sure listesi ve Arapça Kur’an metni AlQuran Cloud API üzerinden alınır; seçilen sureler çevrimdışı saklanabilir ve tüm metin tek indirmeyle cihazda tutulabilir

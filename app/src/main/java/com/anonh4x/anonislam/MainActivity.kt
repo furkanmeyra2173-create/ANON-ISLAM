@@ -66,12 +66,20 @@ private enum class AppTab(val label: String, val icon: ImageVector) {
 }
 
 private data class PrayerTime(val name: String, val time: String)
+private val prayerCalculationMethods = listOf(
+    13 to "Diyanet Türkiye (API deneysel)",
+    3 to "Müslüman Dünya Birliği",
+    2 to "ISNA",
+    5 to "Mısır Genel Ölçüm İdaresi"
+)
 private data class PrayerData(
     val city: String,
     val date: String,
     val hijriDate: String,
     val times: List<PrayerTime>,
     val dateIso: String = "",
+    val calculationMethod: Int = 13,
+    val asrSchool: Int = 1,
     val isCached: Boolean = false
 )
 
@@ -98,35 +106,52 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AnonIslamApp() {
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME.name) }
-    var city by rememberSaveable { mutableStateOf("Uhingen") }
     val context = androidx.compose.ui.platform.LocalContext.current
     val prayerPreferences = remember(context) {
         context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE)
     }
+    var city by rememberSaveable {
+        mutableStateOf(prayerPreferences.getString("prayer_city", "Uhingen") ?: "Uhingen")
+    }
+    var calculationMethod by rememberSaveable {
+        mutableIntStateOf(prayerPreferences.getInt("calculation_method", 13))
+    }
+    var asrSchool by rememberSaveable {
+        mutableIntStateOf(prayerPreferences.getInt("asr_school", 1))
+    }
     var prayerData by remember {
         mutableStateOf(
-            loadCachedPrayerData(prayerPreferences.getString(prayerCacheKey(city), null))
+            loadCachedPrayerData(
+                prayerPreferences.getString(prayerCacheKey(city, calculationMethod, asrSchool), null)
+            )
         )
     }
     var isLoadingPrayer by remember { mutableStateOf(false) }
     var prayerError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    val loadPrayerTimes: () -> Unit = {
+    val loadPrayerTimes: (Int, Int) -> Unit = { requestedMethod, requestedSchool ->
         val requestedCity = city.trim()
         if (requestedCity.isBlank()) {
             prayerError = "Lütfen şehir adını yaz."
         } else {
+            prayerPreferences.edit().putString("prayer_city", requestedCity).apply()
             scope.launch {
                 isLoadingPrayer = true
                 prayerError = null
                 prayerData = loadCachedPrayerData(
-                    prayerPreferences.getString(prayerCacheKey(requestedCity), null)
+                    prayerPreferences.getString(
+                        prayerCacheKey(requestedCity, requestedMethod, requestedSchool),
+                        null
+                    )
                 )
                 try {
-                    val latestPrayerData = fetchPrayerTimes(requestedCity)
+                    val latestPrayerData = fetchPrayerTimes(requestedCity, requestedMethod, requestedSchool)
                     prayerPreferences.edit()
-                        .putString(prayerCacheKey(requestedCity), prayerDataToCache(latestPrayerData))
+                        .putString(
+                            prayerCacheKey(requestedCity, requestedMethod, requestedSchool),
+                            prayerDataToCache(latestPrayerData)
+                        )
                         .apply()
                     prayerData = latestPrayerData
                 } catch (e: Exception) {
@@ -142,7 +167,7 @@ private fun AnonIslamApp() {
         }
     }
 
-    LaunchedEffect(Unit) { loadPrayerTimes() }
+    LaunchedEffect(Unit) { loadPrayerTimes(calculationMethod, asrSchool) }
 
     val currentTab = AppTab.valueOf(selectedTab)
 
@@ -180,7 +205,23 @@ private fun AnonIslamApp() {
             when (tab) {
                 AppTab.HOME -> HomeScreen(prayerData) { selectedTab = it.name }
                 AppTab.PRAYER -> PrayerScreen(
-                    city, { city = it }, prayerData, isLoadingPrayer, prayerError, loadPrayerTimes
+                    city = city,
+                    onCityChange = { city = it },
+                    calculationMethod = calculationMethod,
+                    asrSchool = asrSchool,
+                    prayerData = prayerData,
+                    isLoading = isLoadingPrayer,
+                    error = prayerError,
+                    onRefresh = { loadPrayerTimes(calculationMethod, asrSchool) },
+                    onCalculationSettingsChange = { method, school ->
+                        calculationMethod = method
+                        asrSchool = school
+                        prayerPreferences.edit()
+                            .putInt("calculation_method", method)
+                            .putInt("asr_school", school)
+                            .apply()
+                        loadPrayerTimes(method, school)
+                    }
                 )
                 AppTab.QURAN -> QuranScreen(context)
                 AppTab.MORE -> MoreScreen { selectedTab = AppTab.PRAYER.name }
@@ -296,11 +337,25 @@ private fun FeatureCard(
 private fun PrayerScreen(
     city: String,
     onCityChange: (String) -> Unit,
+    calculationMethod: Int,
+    asrSchool: Int,
     prayerData: PrayerData?,
     isLoading: Boolean,
     error: String?,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onCalculationSettingsChange: (Int, Int) -> Unit
 ) {
+    var methodMenuExpanded by remember { mutableStateOf(false) }
+    var schoolMenuExpanded by remember { mutableStateOf(false) }
+    val methodLabel = prayerCalculationMethods.firstOrNull { it.first == calculationMethod }?.second ?: "Yöntem $calculationMethod"
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prayerPreferences = remember(context) { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    val today = LocalDate.now(ZoneId.of("Europe/Berlin")).toString()
+    val dailyPrayerKey = "prayers_completed_$today"
+    var completedPrayers by remember(today) {
+        mutableStateOf(prayerPreferences.getStringSet(dailyPrayerKey, emptySet()).orEmpty().toSet())
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -314,6 +369,53 @@ private fun PrayerScreen(
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Hesaplama yöntemi", color = Muted, fontSize = 11.sp)
+                Box {
+                    TextButton(onClick = { methodMenuExpanded = true }, enabled = !isLoading) {
+                        Text(methodLabel, color = Gold, fontSize = 12.sp)
+                    }
+                    DropdownMenu(
+                        expanded = methodMenuExpanded,
+                        onDismissRequest = { methodMenuExpanded = false }
+                    ) {
+                        prayerCalculationMethods.forEach { (methodId, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    methodMenuExpanded = false
+                                    onCalculationSettingsChange(methodId, asrSchool)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text("İkindi hesabı", color = Muted, fontSize = 11.sp)
+                Box {
+                    TextButton(onClick = { schoolMenuExpanded = true }, enabled = !isLoading) {
+                        Text(if (asrSchool == 1) "Hanefî" else "Şâfiî / diğer", color = Gold, fontSize = 12.sp)
+                    }
+                    DropdownMenu(
+                        expanded = schoolMenuExpanded,
+                        onDismissRequest = { schoolMenuExpanded = false }
+                    ) {
+                        listOf(1 to "Hanefî", 0 to "Şâfiî / diğer").forEach { (schoolId, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    schoolMenuExpanded = false
+                                    onCalculationSettingsChange(calculationMethod, schoolId)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Text("Yöntem ve ikindi tercihi cihaza kaydedilir; sonuçlar şehir ve ayarlara göre yeniden alınır.", color = Muted, fontSize = 11.sp)
         Button(
             onClick = onRefresh,
             modifier = Modifier.fillMaxWidth(),
@@ -332,6 +434,38 @@ private fun PrayerScreen(
         }
 
         if (error != null) Text(error, color = Color(0xFFFF8A80), fontSize = 13.sp)
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Bugünkü namaz takibi", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("${completedPrayers.size}/5 tamamlandı · yalnızca bu cihazda saklanır", color = Muted, fontSize = 11.sp)
+                listOf("Sabah", "Öğle", "İkindi", "Akşam", "Yatsı").forEach { prayerName ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = prayerName in completedPrayers,
+                            onCheckedChange = { isChecked ->
+                                val updated = if (isChecked) completedPrayers + prayerName else completedPrayers - prayerName
+                                completedPrayers = updated
+                                prayerPreferences.edit()
+                                    .putStringSet(dailyPrayerKey, updated.toMutableSet())
+                                    .apply()
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Emerald,
+                                uncheckedColor = Muted,
+                                checkmarkColor = Night
+                            )
+                        )
+                        Text(prayerName, color = Color.White, fontSize = 14.sp)
+                    }
+                }
+                Text("Kişisel takip amaçlıdır; dinî hüküm veya otomatik doğrulama içermez.", color = Muted, fontSize = 10.sp)
+            }
+        }
 
         if (prayerData != null) {
             Card(
@@ -370,7 +504,7 @@ private fun PrayerScreen(
                 }
             }
             Text(
-                "Hesaplama yöntemi: Diyanet (13), ikindi için Hanefî. Yerel caminin vakitleri birkaç dakika farklı olabilir.",
+                "Hesaplama yöntemi: ${prayerCalculationMethods.firstOrNull { it.first == prayerData.calculationMethod }?.second ?: "Yöntem ${prayerData.calculationMethod}"}; ikindi için ${if (prayerData.asrSchool == 1) "Hanefî" else "Şâfiî / diğer"}. Yerel caminin vakitleri birkaç dakika farklı olabilir.",
                 color = Muted,
                 fontSize = 11.sp
             )
@@ -460,10 +594,10 @@ private fun ScreenHeading(title: String, subtitle: String) {
     }
 }
 
-private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dispatchers.IO) {
+private suspend fun fetchPrayerTimes(city: String, method: Int, school: Int): PrayerData = withContext(Dispatchers.IO) {
     val safeCity = URLEncoder.encode(city, "UTF-8")
     val url = URL(
-        "https://api.aladhan.com/v1/timingsByCity?city=$safeCity&country=Germany&method=13&school=1&latitudeAdjustmentMethod=3"
+        "https://api.aladhan.com/v1/timingsByCity?city=$safeCity&country=Germany&method=$method&school=$school&latitudeAdjustmentMethod=3"
     )
     val connection = (url.openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
@@ -506,7 +640,15 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
             PrayerTime("Akşam", cleanTime(timings.optString("Maghrib"))),
             PrayerTime("Yatsı", cleanTime(timings.optString("Isha")))
         )
-        PrayerData(city, readableDate, hijri, prayers, dateIso = dateIso)
+        PrayerData(
+            city = city,
+            date = readableDate,
+            hijriDate = hijri,
+            times = prayers,
+            dateIso = dateIso,
+            calculationMethod = method,
+            asrSchool = school
+        )
     } finally {
         connection.disconnect()
     }
@@ -514,14 +656,16 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
 
 private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
 
-private fun prayerCacheKey(city: String): String =
-    "prayer_cache_${city.trim().lowercase(Locale.ROOT)}"
+private fun prayerCacheKey(city: String, method: Int, school: Int): String =
+    "prayer_cache_${city.trim().lowercase(Locale.ROOT)}_${method}_$school"
 
 private fun prayerDataToCache(prayerData: PrayerData): String = JSONObject().apply {
     put("city", prayerData.city)
     put("date", prayerData.date)
     put("hijriDate", prayerData.hijriDate)
     put("dateIso", prayerData.dateIso)
+    put("calculationMethod", prayerData.calculationMethod)
+    put("asrSchool", prayerData.asrSchool)
     put("times", org.json.JSONArray().apply {
         prayerData.times.forEach { prayer ->
             put(JSONObject().apply {
@@ -549,6 +693,8 @@ private fun loadCachedPrayerData(serialized: String?): PrayerData? = runCatching
         hijriDate = cached.optString("hijriDate"),
         times = prayerTimes,
         dateIso = cached.optString("dateIso"),
+        calculationMethod = cached.optInt("calculationMethod", 13),
+        asrSchool = cached.optInt("asrSchool", 1),
         isCached = true
     )
 }.getOrNull()
