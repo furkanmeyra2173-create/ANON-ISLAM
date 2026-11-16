@@ -2,11 +2,12 @@
 
 Türkçe arayüzlü, Android için kapsamlı bir İslam yardımcı uygulaması.
 
-## İlk sürüm
-- Ana ekran ve modüler gezinme
-- Namaz vakitleri için hazırlanmış bölüm
-- Kur'an, dualar, hadis, kıble ve tesbih bölümleri için başlangıç ekranları
-- İleride güvenilir kaynaklara dayalı yapay zekâ asistanı entegrasyonu
+## Mevcut sürüm
+- Türkçe Jetpack Compose ana ekranı ve alt gezinme
+- Şehir seçimiyle çevrimiçi namaz vakitleri
+- Cihazda saklanan, internet gerektirmeyen dijital zikir sayacı
+- Yapay zekâ sohbeti, API bağlantısı veya chatbot uygulamaya dahil değildir
+- Kur'an, doğrulanmış dualar/hadisler, kıble, bildirimler ve diğer kapsamlı içerikler henüz tamamlanmamıştır; kaynaklar doğrulanmadan gösterilmez
 
 ## Teknoloji
 - Kotlin
@@ -15,6 +16,6 @@ Türkçe arayüzlü, Android için kapsamlı bir İslam yardımcı uygulaması.
 - Android 8.0+ (API 26+) başlangıç desteği
 
 ## Derleme
-GitHub Actions, `app-debug.apk` dosyasını otomatik oluşturur. AI cevapları ve namaz vakitleri gibi çevrimiçi özellikler, güvenilir servis ve kaynaklar doğrulandıktan sonra eklenecektir.
+GitHub Actions, `app-debug.apk` dosyasını otomatik oluşturur. Namaz vakitleri çevrimiçi kaynaktan alınır. Yapay zekâ özellikleri uygulamanın kapsamına dahil değildir.
 
-> Not: Bu ilk commit uygulamanın çalışan temel iskeletidir; henüz gerçek namaz vakti hesaplaması, Kur'an sesleri veya AI bağlantısı içermez.
+> Not: Kur'an sesleri henüz uygulamada bulunmaz. Zikir sayacı çevrimdışıdır; namaz vakitleri için internet bağlantısı gerekir.

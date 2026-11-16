@@ -1,5 +1,7 @@
 package com.anonh4x.anonislam
 
+import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -20,49 +22,71 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Night = Color(0xFF07110E)
-private val Panel = Color(0xFF10231C)
-private val PanelLight = Color(0xFF17352A)
-private val Emerald = Color(0xFF19B67A)
-private val Gold = Color(0xFFE5C36B)
-private val Muted = Color(0xFFB8C8C0)
+private data class AppPalette(
+    val background: Color,
+    val panel: Color,
+    val panelRaised: Color,
+    val accent: Color,
+    val highlight: Color,
+    val muted: Color,
+    val foreground: Color
+)
 
-private enum class AppTab(val label: String, val icon: ImageVector) {
-    HOME("Ana Sayfa", Icons.Filled.Home),
-    PRAYER("Namaz", Icons.Filled.Mosque),
-    AI("AI Asistan", Icons.Filled.Chat),
-    QURAN("Kur'an", Icons.Filled.AutoStories),
-    MORE("Diğer", Icons.Filled.MoreHoriz)
+private val darkPalette = AppPalette(
+    Color(0xFF07110E), Color(0xFF10231C), Color(0xFF17352A),
+    Color(0xFF19B67A), Color(0xFFE5C36B), Color(0xFFB8C8C0), Color.White
+)
+private val lightPalette = AppPalette(
+    Color(0xFFF5F7F3), Color.White, Color(0xFFE8F1EB),
+    Color(0xFF087A50), Color(0xFF856313), Color(0xFF56675F), Color(0xFF14211A)
+)
+private val LocalAppPalette = androidx.compose.runtime.staticCompositionLocalOf { darkPalette }
+private val Night: Color @Composable get() = LocalAppPalette.current.background
+private val Panel: Color @Composable get() = LocalAppPalette.current.panel
+private val PanelLight: Color @Composable get() = LocalAppPalette.current.panelRaised
+private val Emerald: Color @Composable get() = LocalAppPalette.current.accent
+private val Gold: Color @Composable get() = LocalAppPalette.current.highlight
+private val Muted: Color @Composable get() = LocalAppPalette.current.muted
+private val Foreground: Color @Composable get() = LocalAppPalette.current.foreground
+
+private enum class AppTab(val labelRes: Int, val icon: ImageVector) {
+    HOME(R.string.tab_home, Icons.Filled.Home),
+    PRAYER(R.string.tab_prayer, Icons.Filled.Mosque),
+    QURAN(R.string.tab_quran, Icons.Filled.AutoStories),
+    MORE(R.string.tab_more, Icons.Filled.MoreHoriz)
 }
 
 private data class PrayerTime(val name: String, val time: String)
@@ -72,30 +96,33 @@ private data class PrayerData(
     val hijriDate: String,
     val times: List<PrayerTime>
 )
-private data class ChatMessage(val text: String, val fromUser: Boolean)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Emerald,
-                    onPrimary = Night,
-                    secondary = Gold,
-                    background = Night,
-                    surface = Panel,
-                    onSurface = Color.White
-                )
-            ) {
-                AnonIslamApp()
-            }
+            AnonIslamApp()
         }
     }
 }
 
 @Composable
 private fun AnonIslamApp() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember(context) { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    var isLightTheme by rememberSaveable {
+        mutableStateOf(preferences.getBoolean("light_theme", false))
+    }
+    var languageCode by rememberSaveable {
+        mutableStateOf(preferences.getString("app_language", "tr") ?: "tr")
+    }
+    val baseConfiguration = LocalConfiguration.current
+    val appConfiguration = remember(languageCode, baseConfiguration) {
+        Configuration(baseConfiguration).apply {
+            setLocale(Locale.forLanguageTag(languageCode))
+        }
+    }
+    val palette = if (isLightTheme) lightPalette else darkPalette
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME.name) }
     var city by rememberSaveable { mutableStateOf("Uhingen") }
     var prayerData by remember { mutableStateOf<PrayerData?>(null) }
@@ -112,7 +139,7 @@ private fun AnonIslamApp() {
                 isLoadingPrayer = true
                 prayerError = null
                 try {
-                    prayerData = fetchPrayerTimes(requestedCity)
+                    prayerData = fetchPrayerTimes(requestedCity, Locale.forLanguageTag(languageCode))
                 } catch (e: Exception) {
                     prayerError = e.message ?: "Namaz vakitleri alınamadı. İnternet bağlantını kontrol et."
                 } finally {
@@ -122,20 +149,45 @@ private fun AnonIslamApp() {
         }
     }
 
-    LaunchedEffect(Unit) { loadPrayerTimes() }
+    LaunchedEffect(languageCode) { loadPrayerTimes() }
 
     val currentTab = AppTab.valueOf(selectedTab)
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalConfiguration provides appConfiguration
+    ) {
+    MaterialTheme(
+        colorScheme = if (isLightTheme) {
+            lightColorScheme(
+                primary = palette.accent,
+                onPrimary = Color.White,
+                secondary = palette.highlight,
+                background = palette.background,
+                surface = palette.panel,
+                onSurface = palette.foreground
+            )
+        } else {
+            darkColorScheme(
+                primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.highlight,
+                background = palette.background,
+                surface = palette.panel,
+                onSurface = palette.foreground
+            )
+        }
+    ) {
+      androidx.compose.runtime.CompositionLocalProvider(LocalAppPalette provides palette) {
     Scaffold(
         containerColor = Night,
         bottomBar = {
-            NavigationBar(containerColor = Panel, contentColor = Color.White) {
+            NavigationBar(containerColor = Panel, contentColor = Foreground) {
                 AppTab.values().forEach { tab ->
                     NavigationBarItem(
                         selected = currentTab == tab,
                         onClick = { selectedTab = tab.name },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label, fontSize = 10.sp) },
+                        icon = { Icon(tab.icon, contentDescription = stringResource(tab.labelRes)) },
+                        label = { Text(stringResource(tab.labelRes), fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Night,
                             selectedTextColor = Gold,
@@ -162,11 +214,25 @@ private fun AnonIslamApp() {
                 AppTab.PRAYER -> PrayerScreen(
                     city, { city = it }, prayerData, isLoadingPrayer, prayerError, loadPrayerTimes
                 )
-                AppTab.AI -> AiChatScreen()
                 AppTab.QURAN -> QuranScreen()
-                AppTab.MORE -> MoreScreen { selectedTab = AppTab.PRAYER.name }
+                AppTab.MORE -> MoreScreen(
+                    isLightTheme = isLightTheme,
+                    languageCode = languageCode,
+                    onLanguageChange = { code ->
+                        languageCode = code
+                        preferences.edit().putString("app_language", code).apply()
+                    },
+                    onThemeChange = { enabled ->
+                        isLightTheme = enabled
+                        preferences.edit().putBoolean("light_theme", enabled).apply()
+                    },
+                    onNavigateToPrayer = { selectedTab = AppTab.PRAYER.name }
+                )
             }
         }
+    }
+      }
+    }
     }
 }
 
@@ -179,8 +245,8 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("ANON", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("İSLAM", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Bilgiyle, huzurla, güvenilir kaynaklarla.", color = Muted, fontSize = 12.sp)
+                Text("İSLAM", color = Foreground, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+                Text(stringResource(R.string.home_tagline), color = Muted, fontSize = 12.sp)
             }
             Icon(Icons.Filled.Mosque, contentDescription = null, tint = Gold, modifier = Modifier.size(42.dp))
         }
@@ -192,15 +258,8 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("ESSELÂMÜ ALEYKÜM", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text("Hoş geldin", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                Text("İbadet ve öğrenme yolculuğuna buradan devam et.", color = Muted, fontSize = 13.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.SmartToy, contentDescription = null, tint = Emerald, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    TextButton(onClick = { onNavigate(AppTab.AI) }) {
-                        Text("AI asistanına sor", color = Gold)
-                    }
-                }
+                Text(stringResource(R.string.greeting), color = Foreground, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.home_intro), color = Muted, fontSize = 13.sp)
             }
         }
 
@@ -214,17 +273,17 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Mosque, contentDescription = null, tint = Emerald)
                     Spacer(Modifier.width(8.dp))
-                    Text("BUGÜNÜN NAMAZ VAKİTLERİ", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.today_prayers), color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 if (prayerData == null) {
-                    Text("Vakitler yükleniyor veya şehir seçimi bekleniyor…", color = Muted, fontSize = 12.sp)
+                    Text(stringResource(R.string.prayers_loading), color = Muted, fontSize = 12.sp)
                 } else {
                     Text(prayerData.city + " • " + prayerData.date, color = Muted, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         prayerData.times.filter { it.name != "Güneş" }.forEach { prayer ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(prayer.name, color = Muted, fontSize = 10.sp)
-                                Text(prayer.time, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(stringResource(prayerLabelResource(prayer.name)), color = Muted, fontSize = 10.sp)
+                                Text(prayer.time, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -232,28 +291,28 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
             }
         }
 
-        Text("KEŞFET", color = Emerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.discover), color = Emerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Kur'an-ı Kerim", "Sureler ve mealler", Icons.Filled.AutoStories, Modifier.weight(1f)) {
+            FeatureCard(stringResource(R.string.feature_quran), stringResource(R.string.feature_quran_subtitle), Icons.Filled.AutoStories, Modifier.weight(1f)) {
                 onNavigate(AppTab.QURAN)
             }
-            FeatureCard("Namaz Vakitleri", "Şehrine göre", Icons.Filled.Mosque, Modifier.weight(1f)) {
+            FeatureCard(stringResource(R.string.feature_prayer), stringResource(R.string.feature_prayer_subtitle), Icons.Filled.Mosque, Modifier.weight(1f)) {
                 onNavigate(AppTab.PRAYER)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Yapay Zekâ", "İslami soru-cevap", Icons.Filled.SmartToy, Modifier.weight(1f)) {
-                onNavigate(AppTab.AI)
+            FeatureCard(stringResource(R.string.feature_dhikr), stringResource(R.string.feature_dhikr_subtitle), Icons.Filled.Favorite, Modifier.weight(1f)) {
+                onNavigate(AppTab.MORE)
             }
-            FeatureCard("Tesbih ve Dualar", "Hazırlanıyor", Icons.Filled.Favorite, Modifier.weight(1f)) {
+            FeatureCard(stringResource(R.string.feature_duas), stringResource(R.string.feature_preparing), Icons.Filled.Favorite, Modifier.weight(1f)) {
                 onNavigate(AppTab.MORE)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Kıble Pusulası", "Hazırlanıyor", Icons.Filled.Explore, Modifier.weight(1f)) {
+            FeatureCard(stringResource(R.string.feature_qibla), stringResource(R.string.feature_preparing), Icons.Filled.Explore, Modifier.weight(1f)) {
                 onNavigate(AppTab.MORE)
             }
-            FeatureCard("Diğer Özellikler", "Yol haritası", Icons.Filled.MoreHoriz, Modifier.weight(1f)) {
+            FeatureCard(stringResource(R.string.feature_more), stringResource(R.string.feature_roadmap), Icons.Filled.MoreHoriz, Modifier.weight(1f)) {
                 onNavigate(AppTab.MORE)
             }
         }
@@ -280,7 +339,7 @@ private fun FeatureCard(
         ) {
             Icon(icon, contentDescription = null, tint = Emerald, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(11.dp))
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(title, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Text(subtitle, color = Muted, fontSize = 11.sp)
         }
     }
@@ -299,12 +358,12 @@ private fun PrayerScreen(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        ScreenHeading("Namaz Vakitleri", "Şehrini seç, günlük vakitleri internetten güncelle.")
+        ScreenHeading(stringResource(R.string.prayer_screen_title), stringResource(R.string.prayer_screen_subtitle))
         OutlinedTextField(
             value = city,
             onValueChange = onCityChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Şehir (Almanya)") },
+            label = { Text(stringResource(R.string.city_label)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
         )
@@ -317,15 +376,26 @@ private fun PrayerScreen(
             if (isLoading) {
                 CircularProgressIndicator(Modifier.size(18.dp), color = Night, strokeWidth = 2.dp)
                 Spacer(Modifier.width(9.dp))
-                Text("Vakitler alınıyor…")
+                Text(stringResource(R.string.prayers_updating))
             } else {
                 Icon(Icons.Filled.Refresh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Vakitleri güncelle")
+                Text(stringResource(R.string.refresh_prayers))
             }
         }
 
-        if (error != null) Text(error, color = Color(0xFFFF8A80), fontSize = 13.sp)
+        if (error != null) {
+            val localizedError = when {
+                error.startsWith("Lütfen şehir") -> stringResource(R.string.city_required)
+                error.startsWith("Şehir bulunamadı") -> stringResource(R.string.city_not_found)
+                error.startsWith("Namaz vakitleri servisine") -> {
+                    val status = error.substringAfter("HTTP ").substringBefore(")").toIntOrNull() ?: 500
+                    stringResource(R.string.prayer_service_error, status)
+                }
+                else -> stringResource(R.string.prayers_unavailable)
+            }
+            Text(localizedError, color = Color(0xFFFF8A80), fontSize = 13.sp)
+        }
 
         if (prayerData != null) {
             Card(
@@ -338,12 +408,12 @@ private fun PrayerScreen(
                         Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Gold)
                         Spacer(Modifier.width(7.dp))
                         Column {
-                            Text(prayerData.city, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text(prayerData.city, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text(prayerData.date, color = Muted, fontSize = 12.sp)
                         }
                     }
                     if (prayerData.hijriDate.isNotBlank()) {
-                        Text("Hicrî tarih: " + prayerData.hijriDate, color = Gold, fontSize = 12.sp)
+                        Text(stringResource(R.string.hijri_date, prayerData.hijriDate), color = Gold, fontSize = 12.sp)
                     }
                     HorizontalDivider(color = PanelLight)
                     prayerData.times.forEach { time ->
@@ -352,182 +422,150 @@ private fun PrayerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(time.name, color = Muted, fontSize = 14.sp)
-                            Text(time.time, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(stringResource(prayerLabelResource(time.name)), color = Muted, fontSize = 14.sp)
+                            Text(time.time, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
                 }
             }
             Text(
-                "Hesaplama yöntemi: Diyanet (13), ikindi için Hanefî. Yerel caminin vakitleri birkaç dakika farklı olabilir.",
+                stringResource(R.string.prayer_calculation_note),
                 color = Muted,
                 fontSize = 11.sp
             )
         } else if (!isLoading && error == null) {
-            Text("Henüz vakit verisi yok. Şehir seçip güncelle.", color = Muted, fontSize = 13.sp)
+            Text(stringResource(R.string.prayers_empty), color = Muted, fontSize = 13.sp)
         }
     }
 }
 
-@Composable
-private fun AiChatScreen() {
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                "Esselâmü aleyküm! Ben ANON İSLAM yapay zekâ asistanıyım. İslami konulardaki sorularını sorabilirsin. Cevaplarımı dikkatli ve kaynak odaklı vermeye çalışırım.",
-                false
-            )
-        )
-    }
-    var draft by rememberSaveable { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 18.dp)) {
-        ScreenHeading("ANON AI", "İslami konularda kaynak odaklı yardımcı")
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(messages) { message -> MessageBubble(message) }
-            if (isSending) {
-                item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Panel),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(9.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    Modifier.size(16.dp),
-                                    color = Emerald,
-                                    strokeWidth = 2.dp
-                                )
-                                Text("ANON AI düşünüyor…", color = Muted, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Sorunu yaz…") },
-                maxLines = 3,
-                enabled = !isSending,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send)
-            )
-            IconButton(
-                onClick = {
-                    val question = draft.trim()
-                    if (question.isNotEmpty() && !isSending) {
-                        messages.add(ChatMessage(question, true))
-                        draft = ""
-                        isSending = true
-                        val requestMessages = messages.takeLast(12).toList()
-                        scope.launch {
-                            try {
-                                val answer = sendAiMessage(requestMessages)
-                                messages.add(ChatMessage(answer, false))
-                            } catch (e: Exception) {
-                                messages.add(
-                                    ChatMessage(
-                                        e.message ?: "AI servisine bağlanılamadı. İnternet bağlantını kontrol edip tekrar dene.",
-                                        false
-                                    )
-                                )
-                            } finally {
-                                isSending = false
-                            }
-                        }
-                    }
-                },
-                enabled = draft.isNotBlank() && !isSending
-            ) {
-                Icon(Icons.Filled.Send, contentDescription = "Gönder", tint = Emerald)
-            }
-        }
-    }
-}
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
-    ) {
-        Card(
-            modifier = Modifier.widthIn(max = 310.dp),
-            colors = CardDefaults.cardColors(containerColor = if (message.fromUser) PanelLight else Panel),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Text(message.text, modifier = Modifier.padding(13.dp), color = Color.White, fontSize = 13.sp)
-        }
-    }
-}
+private fun MoreScreen(
+    isLightTheme: Boolean,
+    languageCode: String,
+    onLanguageChange: (String) -> Unit,
+    onThemeChange: (Boolean) -> Unit,
+    onNavigateToPrayer: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    var count by rememberSaveable { mutableIntStateOf(preferences.getInt("dhikr_count", 0)) }
+    var target by rememberSaveable { mutableIntStateOf(preferences.getInt("dhikr_target", 33)) }
+    val themeLabel = stringResource(if (isLightTheme) R.string.light_theme else R.string.dark_theme)
 
-@Composable
-private fun QuranScreen() {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ScreenHeading("Kur'an-ı Kerim", "Sureler, Arapça metin, meal ve tilavet")
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.AutoStories, contentDescription = null, tint = Emerald, modifier = Modifier.size(32.dp))
-                Text("Kur'an bölümü hazırlanıyor", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "Bir sonraki geliştirmede sure listesi, Arapça metin, Türkçe meal ve sesli tilavet eklenecek. Meal ve kaynak bilgileri açıkça gösterilecek.",
-                    color = Muted,
-                    fontSize = 13.sp
+        ScreenHeading(stringResource(R.string.tools_title), stringResource(R.string.tools_subtitle))
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.language), color = Foreground, fontWeight = FontWeight.SemiBold)
+                listOf("tr" to "Türkçe", "de" to "Deutsch", "en" to "English").forEach { (code, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = languageCode == code,
+                                onClick = { onLanguageChange(code) },
+                                role = Role.RadioButton
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = languageCode == code,
+                            onClick = null
+                        )
+                        Text(label, color = Foreground)
+                    }
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(stringResource(R.string.appearance), color = Foreground, fontWeight = FontWeight.SemiBold)
+                    Text(themeLabel, color = Muted, fontSize = 12.sp)
+                }
+                Switch(
+                    modifier = Modifier.semantics {
+                        contentDescription = themeLabel
+                    },
+                    checked = isLightTheme,
+                    onCheckedChange = onThemeChange,
+                    colors = SwitchDefaults.colors(checkedTrackColor = Emerald)
                 )
             }
         }
-    }
-}
+        Card(
+            modifier = Modifier.fillMaxWidth(),
 
-@Composable
-private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        ScreenHeading("Diğer Özellikler", "ANON İSLAM geliştirme planı")
-        val planned = listOf(
-            "Dijital tesbih ve zikir geçmişi",
-            "Günlük dualar ve kaynaklı hadisler",
-            "Kıble pusulası",
-            "Hicrî takvim ve özel günler",
-            "Namaz vakti bildirimleri"
-        )
-        planned.forEach { item ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Panel),
-                shape = RoundedCornerShape(14.dp)
+            colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(22.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = Emerald)
-                    Spacer(Modifier.width(12.dp))
-                    Text(item, color = Color.White, fontSize = 13.sp)
+                Text(stringResource(R.string.dhikr_counter), color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("$count", color = Foreground, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.target_count, target), color = Muted, fontSize = 13.sp)
+                LinearProgressIndicator(
+                    progress = { (count.toFloat() / target).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Emerald,
+                    trackColor = PanelLight
+                )
+                Button(
+                    onClick = {
+                        count += 1
+                        preferences.edit().putInt("dhikr_count", count).apply()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald, contentColor = Night)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.count_dhikr), fontWeight = FontWeight.Bold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = {
+                        count = 0
+                        preferences.edit().putInt("dhikr_count", 0).apply()
+                    }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Text(" ${stringResource(R.string.reset)}")
+                    }
+                    TextButton(onClick = {
+                        target = if (target == 33) 99 else 33
+                        preferences.edit().putInt("dhikr_target", target).apply()
+                    }) {
+                        Text(stringResource(R.string.set_target, if (target == 33) "99" else "33"))
+                    }
                 }
             }
         }
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(stringResource(R.string.offline_use), color = Gold, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.offline_note), color = Muted, fontSize = 12.sp)
+            }
+        }
         OutlinedButton(onClick = onNavigateToPrayer, modifier = Modifier.fillMaxWidth()) {
-            Text("Namaz vakitlerine git")
+            Text(stringResource(R.string.go_to_prayers))
         }
     }
 }
@@ -535,12 +573,12 @@ private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
 @Composable
 private fun ScreenHeading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+        Text(title, color = Foreground, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
         Text(subtitle, color = Muted, fontSize = 12.sp)
     }
 }
 
-private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dispatchers.IO) {
+private suspend fun fetchPrayerTimes(city: String, locale: Locale): PrayerData = withContext(Dispatchers.IO) {
     val safeCity = URLEncoder.encode(city, "UTF-8")
     val url = URL(
         "https://api.aladhan.com/v1/timingsByCity?city=$safeCity&country=Germany&method=13&school=1&latitudeAdjustmentMethod=3"
@@ -572,7 +610,7 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
         val date = data.optJSONObject("date")
         val hijri = date?.optJSONObject("hijri")?.optString("date").orEmpty()
         val readableDate = date?.optString("readable").orEmpty()
-            .ifBlank { SimpleDateFormat("dd MMM yyyy", Locale("tr", "TR")).format(Date()) }
+            .ifBlank { SimpleDateFormat("dd MMM yyyy", locale).format(Date()) }
 
         val prayers = listOf(
             PrayerTime("İmsak", cleanTime(timings.optString("Fajr"))),
@@ -588,58 +626,14 @@ private suspend fun fetchPrayerTimes(city: String): PrayerData = withContext(Dis
     }
 }
 
-private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
-
-
-private suspend fun sendAiMessage(messages: List<ChatMessage>): String = withContext(Dispatchers.IO) {
-    val endpoint = "https://anon-islam.furkanmeyra-2173.workers.dev"
-    val payload = JSONObject().apply {
-        put("messages", org.json.JSONArray().apply {
-            messages.takeLast(12).forEach { message ->
-                put(JSONObject().apply {
-                    put("role", if (message.fromUser) "user" else "assistant")
-                    put("content", message.text)
-                })
-            }
-        })
-    }
-
-    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        connectTimeout = 20000
-        readTimeout = 90000
-        doOutput = true
-        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        setRequestProperty("Accept", "application/json")
-    }
-
-    try {
-        connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
-            writer.write(payload.toString())
-        }
-
-        val status = connection.responseCode
-        val responseBody = if (status in 200..299) {
-            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } else {
-            connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-        }
-        val response = try {
-            JSONObject(responseBody)
-        } catch (_: Exception) {
-            JSONObject()
-        }
-
-        if (status !in 200..299) {
-            val serverMessage = response.optString("error")
-            throw IllegalStateException(
-                serverMessage.ifBlank { "AI sunucusu hata verdi (HTTP $status)." }
-            )
-        }
-
-        response.optString("answer").takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("AI boş yanıt döndürdü. Lütfen tekrar dene.")
-    } finally {
-        connection.disconnect()
-    }
+private fun prayerLabelResource(name: String): Int = when (name) {
+    "İmsak" -> R.string.prayer_fajr
+    "Güneş" -> R.string.prayer_sunrise
+    "Öğle" -> R.string.prayer_dhuhr
+    "İkindi" -> R.string.prayer_asr
+    "Akşam" -> R.string.prayer_maghrib
+    "Yatsı" -> R.string.prayer_isha
+    else -> R.string.prayer_fajr
 }
+
+private fun cleanTime(value: String): String = value.substringBefore(" ").trim()
