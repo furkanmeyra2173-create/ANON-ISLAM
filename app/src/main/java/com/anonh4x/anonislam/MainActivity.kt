@@ -182,7 +182,7 @@ private fun AnonIslamApp() {
                 AppTab.PRAYER -> PrayerScreen(
                     city, { city = it }, prayerData, isLoadingPrayer, prayerError, loadPrayerTimes
                 )
-                AppTab.QURAN -> QuranScreen()
+                AppTab.QURAN -> QuranScreen(context)
                 AppTab.MORE -> MoreScreen { selectedTab = AppTab.PRAYER.name }
             }
         }
@@ -251,7 +251,7 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
 
         Text("KEŞFET", color = Emerald, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FeatureCard("Kur'an-ı Kerim", "Sureler ve mealler", Icons.Filled.AutoStories, Modifier.weight(1f)) {
+            FeatureCard("Kur'an-ı Kerim", "Sure listesi ve Arapça metin", Icons.Filled.AutoStories, Modifier.weight(1f)) {
                 onNavigate(AppTab.QURAN)
             }
             FeatureCard("Namaz Vakitleri", "Şehrine göre", Icons.Filled.Mosque, Modifier.weight(1f)) {
@@ -376,27 +376,6 @@ private fun PrayerScreen(
             )
         } else if (!isLoading && error == null) {
             Text("Henüz vakit verisi yok. Şehir seçip güncelle.", color = Muted, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun QuranScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        ScreenHeading("Kur'an-ı Kerim", "Sureler, Arapça metin, meal ve tilavet")
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.AutoStories, contentDescription = null, tint = Emerald, modifier = Modifier.size(32.dp))
-                Text("Kur'an bölümü hazırlanıyor", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "Bir sonraki geliştirmede sure listesi, Arapça metin, Türkçe meal ve sesli tilavet eklenecek. Meal ve kaynak bilgileri açıkça gösterilecek.",
-                    color = Muted,
-                    fontSize = 13.sp
-                )
-            }
         }
     }
 }

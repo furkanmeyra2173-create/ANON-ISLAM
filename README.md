@@ -8,7 +8,9 @@ Türkçe arayüzlü, Android için kapsamlı bir İslam yardımcı uygulaması.
 - Sonraki namaza geri sayım yalnızca güncel tarihli vakit verisi varsa gösterilir
 - Cihazda saklanan, internet gerektirmeyen dijital zikir sayacı
 - Yapay zekâ sohbeti, API bağlantısı veya chatbot uygulamaya dahil değildir
-- Kur'an, doğrulanmış dualar/hadisler, kıble, bildirimler ve diğer kapsamlı içerikler henüz tamamlanmamıştır; kaynaklar doğrulanmadan gösterilmez
+- 114 sure listesi ve Arapça Kur’an metni AlQuran Cloud API üzerinden alınır; seçilen sureler çevrimdışı saklanabilir ve tüm metin tek indirmeyle cihazda tutulabilir
+- Arapça metin Tanzil Project atfı ve CC BY 3.0 bildirimiyle aynen gösterilir; Türkçe meallerin lisansı doğrulanana kadar meal sunulmaz
+- Doğrulanmış dualar/hadisler, kıble, bildirimler ve diğer kapsamlı içerikler henüz tamamlanmamıştır; kaynaklar doğrulanmadan gösterilmez
 
 ## Teknoloji
 - Kotlin
