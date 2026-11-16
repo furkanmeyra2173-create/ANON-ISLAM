@@ -439,26 +439,6 @@ private fun PrayerScreen(
     }
 }
 
-@Composable
-private fun QuranScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        ScreenHeading(stringResource(R.string.quran_title), stringResource(R.string.quran_subtitle))
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.AutoStories, contentDescription = null, tint = Emerald, modifier = Modifier.size(32.dp))
-                Text(stringResource(R.string.quran_preparing), color = Foreground, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    stringResource(R.string.quran_coming_soon),
-                    color = Muted,
-                    fontSize = 13.sp
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun MoreScreen(
