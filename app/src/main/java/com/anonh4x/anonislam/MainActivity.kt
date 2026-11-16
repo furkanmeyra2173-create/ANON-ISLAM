@@ -43,17 +43,39 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Night = Color(0xFF07110E)
-private val Panel = Color(0xFF10231C)
-private val PanelLight = Color(0xFF17352A)
-private val Emerald = Color(0xFF19B67A)
-private val Gold = Color(0xFFE5C36B)
-private val Muted = Color(0xFFB8C8C0)
+private data class AppPalette(
+    val background: Color,
+    val panel: Color,
+    val panelRaised: Color,
+    val accent: Color,
+    val highlight: Color,
+    val muted: Color,
+    val foreground: Color
+)
+
+private val darkPalette = AppPalette(
+    Color(0xFF07110E), Color(0xFF10231C), Color(0xFF17352A),
+    Color(0xFF19B67A), Color(0xFFE5C36B), Color(0xFFB8C8C0), Color.White
+)
+private val lightPalette = AppPalette(
+    Color(0xFFF5F7F3), Color.White, Color(0xFFE8F1EB),
+    Color(0xFF087A50), Color(0xFF856313), Color(0xFF56675F), Color(0xFF14211A)
+)
+private val LocalAppPalette = androidx.compose.runtime.staticCompositionLocalOf { darkPalette }
+private val Night: Color @Composable get() = LocalAppPalette.current.background
+private val Panel: Color @Composable get() = LocalAppPalette.current.panel
+private val PanelLight: Color @Composable get() = LocalAppPalette.current.panelRaised
+private val Emerald: Color @Composable get() = LocalAppPalette.current.accent
+private val Gold: Color @Composable get() = LocalAppPalette.current.highlight
+private val Muted: Color @Composable get() = LocalAppPalette.current.muted
+private val Foreground: Color @Composable get() = LocalAppPalette.current.foreground
 
 private enum class AppTab(val label: String, val icon: ImageVector) {
     HOME("Ana Sayfa", Icons.Filled.Home),
@@ -74,24 +96,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Emerald,
-                    onPrimary = Night,
-                    secondary = Gold,
-                    background = Night,
-                    surface = Panel,
-                    onSurface = Color.White
-                )
-            ) {
-                AnonIslamApp()
-            }
+            AnonIslamApp()
         }
     }
 }
 
 @Composable
 private fun AnonIslamApp() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember(context) { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    var isLightTheme by rememberSaveable {
+        mutableStateOf(preferences.getBoolean("light_theme", false))
+    }
+    val palette = if (isLightTheme) lightPalette else darkPalette
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME.name) }
     var city by rememberSaveable { mutableStateOf("Uhingen") }
     var prayerData by remember { mutableStateOf<PrayerData?>(null) }
@@ -122,10 +139,32 @@ private fun AnonIslamApp() {
 
     val currentTab = AppTab.valueOf(selectedTab)
 
+    MaterialTheme(
+        colorScheme = if (isLightTheme) {
+            lightColorScheme(
+                primary = palette.accent,
+                onPrimary = Color.White,
+                secondary = palette.highlight,
+                background = palette.background,
+                surface = palette.panel,
+                onSurface = palette.foreground
+            )
+        } else {
+            darkColorScheme(
+                primary = palette.accent,
+                onPrimary = palette.background,
+                secondary = palette.highlight,
+                background = palette.background,
+                surface = palette.panel,
+                onSurface = palette.foreground
+            )
+        }
+    ) {
+      androidx.compose.runtime.CompositionLocalProvider(LocalAppPalette provides palette) {
     Scaffold(
         containerColor = Night,
         bottomBar = {
-            NavigationBar(containerColor = Panel, contentColor = Color.White) {
+            NavigationBar(containerColor = Panel, contentColor = Foreground) {
                 AppTab.values().forEach { tab ->
                     NavigationBarItem(
                         selected = currentTab == tab,
@@ -159,9 +198,18 @@ private fun AnonIslamApp() {
                     city, { city = it }, prayerData, isLoadingPrayer, prayerError, loadPrayerTimes
                 )
                 AppTab.QURAN -> QuranScreen()
-                AppTab.MORE -> MoreScreen { selectedTab = AppTab.PRAYER.name }
+                AppTab.MORE -> MoreScreen(
+                    isLightTheme = isLightTheme,
+                    onThemeChange = { enabled ->
+                        isLightTheme = enabled
+                        preferences.edit().putBoolean("light_theme", enabled).apply()
+                    },
+                    onNavigateToPrayer = { selectedTab = AppTab.PRAYER.name }
+                )
             }
         }
+    }
+      }
     }
 }
 
@@ -174,7 +222,7 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("ANON", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("İSLAM", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+                Text("İSLAM", color = Foreground, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Bilgiyle, huzurla, güvenilir kaynaklarla.", color = Muted, fontSize = 12.sp)
             }
             Icon(Icons.Filled.Mosque, contentDescription = null, tint = Gold, modifier = Modifier.size(42.dp))
@@ -187,7 +235,7 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("ESSELÂMÜ ALEYKÜM", color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text("Hoş geldin", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text("Hoş geldin", color = Foreground, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 Text("İbadet ve öğrenme yolculuğuna buradan devam et.", color = Muted, fontSize = 13.sp)
             }
         }
@@ -212,7 +260,7 @@ private fun HomeScreen(prayerData: PrayerData?, onNavigate: (AppTab) -> Unit) {
                         prayerData.times.filter { it.name != "Güneş" }.forEach { prayer ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(prayer.name, color = Muted, fontSize = 10.sp)
-                                Text(prayer.time, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(prayer.time, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -268,7 +316,7 @@ private fun FeatureCard(
         ) {
             Icon(icon, contentDescription = null, tint = Emerald, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(11.dp))
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(title, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Text(subtitle, color = Muted, fontSize = 11.sp)
         }
     }
@@ -326,7 +374,7 @@ private fun PrayerScreen(
                         Icon(Icons.Filled.LocationOn, contentDescription = null, tint = Gold)
                         Spacer(Modifier.width(7.dp))
                         Column {
-                            Text(prayerData.city, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text(prayerData.city, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text(prayerData.date, color = Muted, fontSize = 12.sp)
                         }
                     }
@@ -341,7 +389,7 @@ private fun PrayerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(time.name, color = Muted, fontSize = 14.sp)
-                            Text(time.time, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(time.time, color = Foreground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
                 }
@@ -367,7 +415,7 @@ private fun QuranScreen() {
         Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Filled.AutoStories, contentDescription = null, tint = Emerald, modifier = Modifier.size(32.dp))
-                Text("Kur'an bölümü hazırlanıyor", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Kur'an bölümü hazırlanıyor", color = Foreground, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     "Bir sonraki geliştirmede sure listesi, Arapça metin, Türkçe meal ve sesli tilavet eklenecek. Meal ve kaynak bilgileri açıkça gösterilecek.",
                     color = Muted,
@@ -379,7 +427,11 @@ private fun QuranScreen() {
 }
 
 @Composable
-private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
+private fun MoreScreen(
+    isLightTheme: Boolean,
+    onThemeChange: (Boolean) -> Unit,
+    onNavigateToPrayer: () -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val preferences = remember { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
     var count by rememberSaveable { mutableIntStateOf(preferences.getInt("dhikr_count", 0)) }
@@ -393,6 +445,30 @@ private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Panel),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Görünüm", color = Foreground, fontWeight = FontWeight.SemiBold)
+                    Text(if (isLightTheme) "Açık tema" else "Koyu tema", color = Muted, fontSize = 12.sp)
+                }
+                Switch(
+                    modifier = Modifier.semantics {
+                        contentDescription = if (isLightTheme) "Açık tema" else "Koyu tema"
+                    },
+                    checked = isLightTheme,
+                    onCheckedChange = onThemeChange,
+                    colors = SwitchDefaults.colors(checkedTrackColor = Emerald)
+                )
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+
+            colors = CardDefaults.cardColors(containerColor = Panel),
             shape = RoundedCornerShape(22.dp)
         ) {
             Column(
@@ -401,7 +477,7 @@ private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text("ZİKİR SAYACI", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("$count", color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.Bold)
+                Text("$count", color = Foreground, fontSize = 52.sp, fontWeight = FontWeight.Bold)
                 Text("Hedef: $target", color = Muted, fontSize = 13.sp)
                 LinearProgressIndicator(
                     progress = { (count.toFloat() / target).coerceIn(0f, 1f) },
@@ -453,7 +529,7 @@ private fun MoreScreen(onNavigateToPrayer: () -> Unit) {
 @Composable
 private fun ScreenHeading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+        Text(title, color = Foreground, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
         Text(subtitle, color = Muted, fontSize = 12.sp)
     }
 }
