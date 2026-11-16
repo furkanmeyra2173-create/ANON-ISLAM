@@ -1,6 +1,7 @@
 package com.anonh4x.anonislam
 
 import android.content.Context
+import android.content.Intent
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,6 +64,11 @@ private val QuranGreen = Color(0xFF19B67A)
 internal fun QuranScreen(context: Context) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
+    val preferences = remember(context) { context.getSharedPreferences("anon_islam", Context.MODE_PRIVATE) }
+    var favoriteAyahs by remember {
+        mutableStateOf(preferences.getStringSet("quran_favorites", emptySet()).orEmpty().toSet())
+    }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     var surahs by remember { mutableStateOf<List<QuranSurahSummary>>(emptyList()) }
     var selectedSurah by remember { mutableStateOf<QuranSurah?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -210,6 +219,13 @@ internal fun QuranScreen(context: Context) {
             }
         } else {
             val surah = selectedSurah ?: return@Column
+            val displayedAyahs = remember(surah, favoritesOnly, favoriteAyahs) {
+                if (favoritesOnly) {
+                    surah.ayahs.filter { "${surah.summary.number}:${it.number}" in favoriteAyahs }
+                } else {
+                    surah.ayahs
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { selectedSurah = null }) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Sure listesine dön", tint = QuranGold)
@@ -221,13 +237,22 @@ internal fun QuranScreen(context: Context) {
                 TextButton(onClick = { fontSize = (fontSize - 2).coerceAtLeast(18) }) { Text("A−", color = QuranGold) }
                 TextButton(onClick = { fontSize = (fontSize + 2).coerceAtMost(40) }) { Text("A+", color = QuranGold) }
             }
-            Text("Arapça metin · Çevrimdışı kayıtlı", color = QuranMuted, fontSize = 11.sp)
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(surah.ayahs, key = { it.number }) { ayah ->
+            val favoriteCountInSurah = surah.ayahs.count { "${surah.summary.number}:${it.number}" in favoriteAyahs }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Arapça metin · Çevrimdışı kayıtlı", modifier = Modifier.weight(1f), color = QuranMuted, fontSize = 11.sp)
+                TextButton(onClick = { favoritesOnly = !favoritesOnly }) {
+                    Text(if (favoritesOnly) "Tüm ayetler" else "Favoriler ($favoriteCountInSurah)", color = QuranGold, fontSize = 11.sp)
+                }
+            }
+            if (displayedAyahs.isEmpty()) {
+                Text("Bu surede henüz favori ayetin yok.", color = QuranMuted, fontSize = 13.sp)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(displayedAyahs, key = { it.number }) { ayah ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -245,10 +270,36 @@ internal fun QuranScreen(context: Context) {
                                 textAlign = TextAlign.Right,
                                 color = Color.White
                             )
-                            Text("${ayah.number}", color = QuranGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Ayet ${ayah.number}", modifier = Modifier.weight(1f), color = QuranGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                val favoriteKey = "${surah.summary.number}:${ayah.number}"
+                                IconButton(onClick = {
+                                    val updated = if (favoriteKey in favoriteAyahs) favoriteAyahs - favoriteKey else favoriteAyahs + favoriteKey
+                                    favoriteAyahs = updated
+                                    preferences.edit().putStringSet("quran_favorites", updated.toMutableSet()).apply()
+                                }) {
+                                    val isFavorite = favoriteKey in favoriteAyahs
+                                    Icon(
+                                        if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                        contentDescription = if (isFavorite) "Favorilerden çıkar" else "Favorilere ekle",
+                                        tint = if (isFavorite) QuranGold else QuranMuted
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    val shareText = "${surah.summary.englishName} ${surah.summary.number}:${ayah.number}\n${ayah.text}\nKaynak: Tanzil Project (CC BY 3.0), AlQuran Cloud"
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, shareText)
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Ayet paylaş"))
+                                }) {
+                                    Icon(Icons.Filled.Share, contentDescription = "Ayeti paylaş", tint = QuranMuted)
+                                }
+                            }
                         }
                     }
                 }
+            }
             }
             TextButton(onClick = { uriHandler.openUri("https://tanzil.net") }) {
                 Text("Tanzil Project · CC BY 3.0 · Metin değiştirilmeden gösterilir", color = QuranMuted, fontSize = 10.sp)
